@@ -10,9 +10,11 @@ requires-python = ">=3.10"
 
 dependencies = [
     "textual",
-    "asciinema",
     "textual-tty"
 ]
+
+[project.scripts]
+textual-asciinema = "textual_asciinema.__main__:main"
 
 [project.optional-dependencies]
 dev = [

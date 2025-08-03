@@ -83,8 +83,8 @@ class PlaybackEngine:
         was_playing = self.is_playing
         await self.pause()
 
-        # Reset terminal
-        self.terminal.clear_screen()
+        # Reset terminal (commented out for now - may be clearing content)
+        # self.terminal.clear_screen()
 
         # Find the frame index for this timestamp
         self._current_frame_index = 0
@@ -97,7 +97,11 @@ class PlaybackEngine:
         for i in range(self._current_frame_index + 1):
             frame = self._frames[i]
             if frame.stream_type == "o":
-                self.terminal.write_text(frame.data)
+                self.terminal.parser.feed(frame.data)
+
+        # Force terminal view to update after seeking
+        if self.terminal.terminal_view:
+            self.terminal.terminal_view.update_content()
 
         self.current_time = timestamp
         if self.on_time_update:
@@ -127,9 +131,11 @@ class PlaybackEngine:
                 ):
                     frame = self._frames[self._current_frame_index]
                     if frame.stream_type == "o":
-                        # Feed data to the terminal for display
-                        self.terminal.write_text(frame.data)
-                        self.terminal.refresh()
+                        # Feed ANSI data to the terminal parser
+                        self.terminal.parser.feed(frame.data)
+                        # Force terminal view to update
+                        if self.terminal.terminal_view:
+                            self.terminal.terminal_view.update_content()
 
                     self._current_frame_index += 1
 

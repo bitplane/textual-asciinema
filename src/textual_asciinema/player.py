@@ -52,9 +52,6 @@ class AsciinemaPlayer(Widget):
 
         # Create terminal with cast dimensions (no process for playback)
         self.terminal = PlaybackTerminal(width=header.width, height=header.height, id="asciinema-terminal")
-        # Set exact size
-        self.terminal.styles.width = header.width
-        self.terminal.styles.height = header.height
 
         # Create playback engine
         self.engine = PlaybackEngine(self.parser, self.terminal)
