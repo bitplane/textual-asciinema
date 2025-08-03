@@ -1,0 +1,32 @@
+#asciinema-terminal {
+    height: auto;
+    border: solid white;
+}
+
+#asciinema-controls {
+    height: 3;
+    dock: bottom;
+}
+
+#controls-container {
+    height: 3;
+    align: center middle;
+}
+
+#play-pause-btn {
+    width: 10;
+}
+
+#time-display {
+    width: 15;
+    text-align: center;
+}
+
+#timeline-scrubber {
+    width: 1fr;
+}
+
+#speed-display {
+    width: 5;
+    text-align: center;
+}
