@@ -5,6 +5,7 @@ from textual.containers import Horizontal
 from textual.widget import Widget
 from textual.widgets import Button, Label, ProgressBar
 from textual.reactive import reactive
+from textual.events import Click
 
 
 class PlayerControls(Widget):
@@ -24,7 +25,7 @@ class PlayerControls(Widget):
     def compose(self) -> ComposeResult:
         """Compose the control bar."""
         with Horizontal(id="controls-container"):
-            yield Button("⏸️", id="play-pause-btn", variant="primary")
+            yield Button("▶️", id="play-pause-btn", variant="primary")
             yield Label(self._format_time_display(), id="time-display")
             yield ProgressBar(total=self.duration, show_eta=False, show_percentage=False, id="timeline-scrubber")
             yield Label(f"{self.speed}x", id="speed-display")
@@ -36,10 +37,14 @@ class PlayerControls(Widget):
         return f"{current_formatted} / {duration_formatted}"
 
     def _format_time(self, seconds: float) -> str:
-        """Format seconds as MM:SS."""
-        minutes = int(seconds // 60)
+        """Format seconds as HH:MM:SS."""
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
         seconds = int(seconds % 60)
-        return f"{minutes:02d}:{seconds:02d}"
+        if hours > 0:
+            return f"{hours}:{minutes:02d}:{seconds:02d}"
+        else:
+            return f"{minutes:02d}:{seconds:02d}"
 
     def watch_current_time(self, new_time: float) -> None:
         """React to time changes."""
@@ -80,15 +85,18 @@ class PlayerControls(Widget):
             if self.on_play_pause:
                 self.on_play_pause()
 
-    def on_click(self, event) -> None:
-        """Handle clicks on the timeline scrubber."""
-        if hasattr(event, "widget") and event.widget.id == "timeline-scrubber":
-            # Calculate the timestamp based on click position
+    def on_click(self, event: Click) -> None:
+        """Handle clicks on child widgets."""
+        # Check if click is on the progress bar
+        if event.widget and event.widget.id == "timeline-scrubber":
             progress_bar = event.widget
-            if hasattr(event, "offset") and progress_bar.size.width > 0:
-                click_ratio = event.offset.x / progress_bar.size.width
-                target_time = click_ratio * self.duration
+            if progress_bar.size.width > 0:
+                # Get click position relative to the progress bar
+                local_x = event.x
+                click_ratio = local_x / progress_bar.size.width
+                click_ratio = max(0.0, min(1.0, click_ratio))
 
+                target_time = click_ratio * self.duration
                 if self.on_seek:
                     self.on_seek(target_time)
 

@@ -83,8 +83,8 @@ class PlaybackEngine:
         was_playing = self.is_playing
         await self.pause()
 
-        # Reset terminal (commented out for now - may be clearing content)
-        # self.terminal.clear_screen()
+        # Clear terminal before replaying to this point
+        self.terminal.clear_screen()
 
         # Find the frame index for this timestamp
         self._current_frame_index = 0

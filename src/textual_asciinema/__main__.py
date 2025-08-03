@@ -10,7 +10,7 @@ from .player import AsciinemaPlayer
 class AsciinemaApp(App):
     """Main application for the asciinema player."""
 
-    CSS_PATH = Path(__file__).parent.parent.parent / "player.tcss"
+    CSS_PATH = Path(__file__).parent / "player.tcss"
 
     def __init__(self, cast_path: str):
         super().__init__()

@@ -1,0 +1,52 @@
+#asciinema-terminal {
+    border: solid white;
+    overflow: hidden;
+}
+
+#asciinema-terminal TerminalScrollView {
+    overflow: hidden;
+    scrollbar-size: 0 0;
+}
+
+#asciinema-controls {
+    height: 3;
+    dock: bottom;
+}
+
+#controls-container {
+    height: 3;
+    width: 100%;
+}
+
+#play-pause-btn {
+    width: 3;
+    min-width: 3;
+    border: none;
+    padding: 0;
+    background: transparent;
+}
+
+#play-pause-btn:focus {
+    border: none;
+    background: transparent;
+    text-style: none;
+}
+
+#play-pause-btn:hover {
+    background: transparent;
+}
+
+#time-display {
+    width: 15;
+    text-align: center;
+}
+
+#timeline-scrubber {
+    width: 1fr;
+}
+
+#speed-display {
+    width: 4;
+    text-align: center;
+    margin: 0 1 0 0;
+}
