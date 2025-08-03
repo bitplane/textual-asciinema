@@ -1,5 +1,4 @@
 #asciinema-terminal {
-    height: auto;
     border: solid white;
 }
 

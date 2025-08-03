@@ -14,10 +14,25 @@ from .controls import PlayerControls
 class PlaybackTerminal(TextualTerminal):
     """TextualTerminal configured for playback-only mode."""
 
-    async def on_mount(self) -> None:
+    async def start_process(self) -> None:
         """Override to prevent starting a shell process."""
-        # Initialize the terminal view without starting a process
+        # Don't start any process - we'll feed data manually for playback
         pass
+
+    async def on_mount(self) -> None:
+        """Initialize terminal without starting a process."""
+        # Initialize the underlying terminal for display without spawning a process
+        if hasattr(self, "terminal") and self.terminal:
+            # Terminal is already initialized
+            pass
+        else:
+            # Try to initialize the terminal display manually
+            try:
+                # The terminal widget should initialize its display components
+                await super().on_mount()
+            except Exception:
+                # If super().on_mount() tries to start a process, we skip it
+                pass
 
 
 class AsciinemaPlayer(Widget):
@@ -37,6 +52,9 @@ class AsciinemaPlayer(Widget):
 
         # Create terminal with cast dimensions (no process for playback)
         self.terminal = PlaybackTerminal(width=header.width, height=header.height, id="asciinema-terminal")
+        # Set exact size
+        self.terminal.styles.width = header.width
+        self.terminal.styles.height = header.height
 
         # Create playback engine
         self.engine = PlaybackEngine(self.parser, self.terminal)
@@ -44,9 +62,9 @@ class AsciinemaPlayer(Widget):
         # Create controls
         self.controls = PlayerControls(duration=self.parser.duration, id="asciinema-controls")
 
-        # Wire up controls to engine
-        self.controls.on_play_pause = self.engine.toggle_play_pause
-        self.controls.on_seek = self.engine.seek_to
+        # Wire up controls to engine (need async wrappers)
+        self.controls.on_play_pause = self._handle_play_pause
+        self.controls.on_seek = self._handle_seek
         self.controls.on_speed_change = self.engine.set_speed
 
         # Wire up engine to controls for time updates
@@ -60,6 +78,14 @@ class AsciinemaPlayer(Widget):
         """Initialize the player when mounted."""
         # Don't start the terminal process - we're in playback mode
         pass
+
+    def _handle_play_pause(self) -> None:
+        """Handle play/pause button clicks (sync wrapper for async method)."""
+        self.run_worker(self.engine.toggle_play_pause())
+
+    def _handle_seek(self, timestamp: float) -> None:
+        """Handle seek requests (sync wrapper for async method)."""
+        self.run_worker(self.engine.seek_to(timestamp))
 
     async def play(self) -> None:
         """Start playback."""

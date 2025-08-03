@@ -97,7 +97,7 @@ class PlaybackEngine:
         for i in range(self._current_frame_index + 1):
             frame = self._frames[i]
             if frame.stream_type == "o":
-                self.terminal.parser.feed(frame.data)
+                self.terminal.write_text(frame.data)
 
         self.current_time = timestamp
         if self.on_time_update:
@@ -127,7 +127,9 @@ class PlaybackEngine:
                 ):
                     frame = self._frames[self._current_frame_index]
                     if frame.stream_type == "o":
-                        self.terminal.parser.feed(frame.data)
+                        # Feed data to the terminal for display
+                        self.terminal.write_text(frame.data)
+                        self.terminal.refresh()
 
                     self._current_frame_index += 1
 
