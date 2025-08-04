@@ -7,3 +7,5 @@ coverage.json
 *.mp4
 docs/pydoc.md
 site
+*.cast
+*.log

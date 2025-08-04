@@ -11,7 +11,7 @@
    - Current workaround: override `start_process()` method
 
 3. **Terminal Not Refreshing** - Terminal doesn't update display when content is written
-   - `write_text()` doesn't trigger automatic refresh
+   - `feed()` doesn't trigger automatic refresh
    - Need to call `terminal_view.update_content()` after writing
    - FIXED: Added `terminal_view.update_content()` calls
 

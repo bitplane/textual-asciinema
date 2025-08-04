@@ -1,11 +1,17 @@
 """Playback engine for asciinema player."""
 
 import asyncio
+import json
+import logging
 import time
 from typing import Callable, Optional, Dict, Any
 from textual_tty import TextualTerminal
 
 from .parser import CastParser, CastFrame
+
+# Set up debug logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 class Keyframe:
@@ -28,7 +34,7 @@ class PlaybackEngine:
         self.terminal = terminal
 
         # Playback state
-        self.current_time = 0.0
+        self.current_time = 0.0  # Current display time
         self.is_playing = False
         self.speed = 1.0
         self.last_update_time = 0.0
@@ -45,13 +51,13 @@ class PlaybackEngine:
         # Playback task
         self._playback_task: Optional[asyncio.Task] = None
 
-        # Streaming playback state
-        self._frame_buffer = []  # Small buffer of upcoming frames
-        self._buffer_size = 100  # Keep 100 frames buffered
-        self._current_file_offset = 0  # Will be set after method definition
+        # Sequential file reading state
+        self._file_handle = None  # Keep file open for sequential reading
+        self._current_file_offset = 0  # Current position in file
+        self._next_frame = None  # Next frame read from file (read-ahead)
 
-        # Initialize file offset after methods are defined
-        self._initialize_offset()
+        # Initialize to first frame position
+        self._initialize_file_position()
 
     async def play(self) -> None:
         """Start or resume playback."""
@@ -85,15 +91,28 @@ class PlaybackEngine:
         """Set playback speed multiplier."""
         self.speed = speed
 
-    def _initialize_offset(self) -> None:
-        """Initialize the current file offset to the first frame."""
+    def _initialize_file_position(self) -> None:
+        """Initialize file handle and position to first frame."""
         try:
+            # Find first frame offset
             for offset, frame in self.parser.frames_with_offsets():
                 self._current_file_offset = offset
-                return
+                break
+            else:
+                self._current_file_offset = 0
+
+            # Open file at the starting position
+            if self._file_handle:
+                self._file_handle.close()
+            self._file_handle = open(self.parser._working_file_path, "rb")
+            self._file_handle.seek(self._current_file_offset)
+
+            # Read first frame for read-ahead
+            self._next_frame = self._read_next_frame_data()
+            logger.debug(f"Initialized with first frame: {self._next_frame.timestamp if self._next_frame else 'None'}")
         except Exception:
-            pass
-        self._current_file_offset = 0  # Fallback to start of file
+            self._current_file_offset = 0
+            self._next_frame = None
 
     def _should_create_keyframe(self) -> bool:
         """Check if we should create a keyframe at current time."""
@@ -126,32 +145,36 @@ class PlaybackEngine:
         if self._should_create_keyframe():
             self._create_keyframe()
 
-    def _fill_frame_buffer(self) -> None:
-        """Fill the frame buffer with upcoming frames."""
-        if len(self._frame_buffer) >= self._buffer_size:
-            return  # Buffer is full
+    def _read_next_frame_data(self) -> Optional[CastFrame]:
+        """Read the next frame from file sequentially. Returns frame or None."""
+        if not self._file_handle:
+            return None
 
-        # Get frames starting from current offset
         try:
-            frame_iter = self.parser.parse_from_offset(self._current_file_offset)
-            frames_to_add = self._buffer_size - len(self._frame_buffer)
+            line = self._file_handle.readline()
+            if not line:
+                return None  # End of file
 
-            for i, frame in enumerate(frame_iter):
-                if i >= frames_to_add:
-                    break
-                self._frame_buffer.append(frame)
+            line_text = line.decode("utf-8").strip()
+            if not line_text:
+                return self._read_next_frame_data()  # Skip empty lines
+
+            frame_data = json.loads(line_text)
+            timestamp, stream_type, data = frame_data
+            frame = CastFrame(timestamp, stream_type, data)
+            return frame
+
         except Exception:
-            # End of file or parsing error
-            pass
+            return None  # Parse error or end of file
 
-    def _get_next_frame(self) -> Optional[CastFrame]:
-        """Get the next frame, managing the buffer."""
-        if not self._frame_buffer:
-            self._fill_frame_buffer()
+    def _consume_next_frame(self) -> Optional[CastFrame]:
+        """Get the next frame and advance to the following one."""
+        if not self._next_frame:
+            return None
 
-        if self._frame_buffer:
-            return self._frame_buffer.pop(0)
-        return None
+        current_frame = self._next_frame
+        self._next_frame = self._read_next_frame_data()  # Read-ahead for next iteration
+        return current_frame
 
     def _find_nearest_keyframe(self, target_time: float) -> Optional[Keyframe]:
         """Find the keyframe closest to but before target_time."""
@@ -212,19 +235,32 @@ class PlaybackEngine:
             if start_offset is None:
                 start_offset = 0
 
-        # Replay frames from start offset to target timestamp
-        self._current_file_offset = start_offset
-        for frame in self.parser.parse_from_offset(start_offset):
-            if frame.timestamp > timestamp:
-                break
+        # Seek file to start offset and replay frames to target timestamp
+        if self._file_handle:
+            self._file_handle.seek(start_offset)
+            self._current_file_offset = start_offset
+
+        # Read and feed frames until we reach target timestamp
+        logger.debug(f"Seek: replaying frames from file to reach timestamp {timestamp:.3f}")
+        frames_replayed = 0
+
+        # Read first frame for new position
+        self._next_frame = self._read_next_frame_data()
+
+        # Process frames until we reach target
+        while self._next_frame and self._next_frame.timestamp <= timestamp:
+            frame = self._consume_next_frame()
+            frames_replayed += 1
+
             if frame.stream_type == "o":
-                # Use _feed_terminal_data to track cost and create keyframes
                 self._feed_terminal_data(frame.data)
+
+        logger.debug(
+            f"Seek: replayed {frames_replayed} frames to reach {timestamp:.3f}, next_frame={self._next_frame.timestamp if self._next_frame else 'None'}"
+        )
 
         # Update state
         self.current_time = timestamp
-        self._frame_buffer.clear()  # Clear buffer after seek
-        self._fill_frame_buffer()  # Refill for playback
 
         if self.on_time_update:
             self.on_time_update(self.current_time)
@@ -235,10 +271,6 @@ class PlaybackEngine:
     async def _playback_loop(self) -> None:
         """Main playback loop with streaming."""
         try:
-            # Initialize buffer if empty
-            if not self._frame_buffer:
-                self._fill_frame_buffer()
-
             while self.is_playing:
                 current_real_time = time.time()
 
@@ -250,26 +282,44 @@ class PlaybackEngine:
 
                 self.last_update_time = current_real_time
 
-                # Process frames that should have played by now
-                while True:
-                    # Peek at next frame
-                    if not self._frame_buffer:
-                        self._fill_frame_buffer()
+                # Process frames that are ready to play (simple read-ahead pattern)
+                accumulated_data = ""
+                frames_processed_this_loop = 0
 
-                    if not self._frame_buffer:
-                        # No more frames, end of file
-                        self.is_playing = False
-                        break
+                logger.debug(
+                    f"Loop start: current_time={self.current_time:.3f}, next_frame={self._next_frame.timestamp if self._next_frame else 'None'}"
+                )
 
-                    next_frame = self._frame_buffer[0]
-                    if next_frame.timestamp > self.current_time:
-                        break  # This frame is in the future
+                # Process all frames that should have played by now
+                while self._next_frame and self._next_frame.timestamp <= self.current_time:
+                    frame = self._consume_next_frame()  # Get current frame and advance read-ahead
+                    frames_processed_this_loop += 1
 
-                    # Process this frame
-                    frame = self._get_next_frame()
-                    if frame and frame.stream_type == "o":
-                        # Feed ANSI data to the terminal parser with cost tracking
-                        self._feed_terminal_data(frame.data)
+                    logger.debug(
+                        f"PROCESS: timestamp={frame.timestamp:.3f}, type={frame.stream_type}, data_len={len(frame.data)}"
+                    )
+
+                    # Is it time to create a keyframe?
+                    if self._should_create_keyframe() and not self.keyframes.get(frame.timestamp):
+                        self._create_keyframe()
+                        logger.debug(f"Created keyframe at {frame.timestamp:.3f}")
+
+                    # Feed this frame to terminal
+                    if frame.stream_type == "o":
+                        accumulated_data += frame.data
+
+                # Check for end of file
+                if not self._next_frame:
+                    logger.debug("End of file reached, stopping playback")
+                    self.is_playing = False
+
+                logger.debug(
+                    f"Loop end: processed={frames_processed_this_loop}, accumulated_data_len={len(accumulated_data)}, next_frame={self._next_frame.timestamp if self._next_frame else 'None'}"
+                )
+
+                # Feed all accumulated data at once
+                if accumulated_data:
+                    self._feed_terminal_data(accumulated_data)
 
                 # Update time display
                 if self.on_time_update:
@@ -293,11 +343,18 @@ class PlaybackEngine:
     def reset(self) -> None:
         """Reset playback to the beginning."""
         self.current_time = 0.0
-        self._current_file_offset = 0
-        self._frame_buffer.clear()
         self.last_keyframe_time = 0.0
         self.current_cost = 0
         # Keep existing keyframes - they're still valid for future seeks
         self.terminal.clear_screen()
+
+        # Reset file position to beginning
+        self._initialize_file_position()
+
         if self.on_time_update:
             self.on_time_update(self.current_time)
+
+    def __del__(self):
+        """Cleanup file handle."""
+        if self._file_handle:
+            self._file_handle.close()

@@ -81,8 +81,7 @@ class TestPlaybackEngine:
         assert not engine.is_playing
         assert engine.speed == 1.0
         assert engine._current_file_offset > 0  # Should be at first frame offset
-        assert engine._frame_buffer == []
-        assert engine._buffer_size == 100
+        assert engine._file_handle is not None  # Should have open file handle
         assert isinstance(engine.keyframes, dict)
 
     def test_set_speed(self, engine_with_parser):
@@ -185,32 +184,26 @@ class TestPlaybackEngine:
         # Should update terminal view
         engine.terminal.terminal_view.update_content.assert_called_once()
 
-    def test_fill_frame_buffer(self, engine_with_parser):
-        """Test frame buffer filling."""
+    def test_consume_next_frame(self, engine_with_parser):
+        """Test consuming frames from read-ahead buffer."""
         engine = engine_with_parser
 
-        # Initially buffer is empty
-        assert len(engine._frame_buffer) == 0
+        # Should have first frame ready
+        assert engine._next_frame is not None
+        assert engine._next_frame.timestamp == 0.0
 
-        # Fill buffer
-        engine._fill_frame_buffer()
-
-        # Should have frames in buffer (up to buffer size or available frames)
-        assert len(engine._frame_buffer) > 0
-        assert len(engine._frame_buffer) <= min(engine._buffer_size, 5)  # 5 frames in test data
-
-    def test_get_next_frame(self, engine_with_parser):
-        """Test getting next frame from buffer."""
-        engine = engine_with_parser
-
-        # Get first frame
-        frame = engine._get_next_frame()
+        # Consume first frame
+        frame = engine._consume_next_frame()
         assert frame is not None
         assert frame.timestamp == 0.0
         assert frame.data == "Frame 0"
 
-        # Get second frame
-        frame = engine._get_next_frame()
+        # Should have advanced to second frame
+        assert engine._next_frame is not None
+        assert engine._next_frame.timestamp == 1.0
+
+        # Consume second frame
+        frame = engine._consume_next_frame()
         assert frame is not None
         assert frame.timestamp == 1.0
         assert frame.data == "Frame 1"
@@ -291,8 +284,6 @@ class TestPlaybackEngine:
 
         # Set some state
         engine.current_time = 5.0
-        engine._current_file_offset = 1000
-        engine._frame_buffer = ["dummy", "frames"]
         engine.current_cost = 100
         engine.on_time_update = Mock()
 
@@ -301,8 +292,7 @@ class TestPlaybackEngine:
 
         # Should reset all state
         assert engine.current_time == 0.0
-        assert engine._current_file_offset == 0
-        assert engine._frame_buffer == []
+        assert engine._current_file_offset > 0  # Should be at first frame offset after reset
         assert engine.current_cost == 0
 
         # Should clear terminal and call time update
@@ -348,7 +338,7 @@ class TestPlaybackEngineIntegration:
         with CastParser(cast_path) as parser:
             engine = PlaybackEngine(parser, mock_terminal)
 
-            # Should be able to get frames
-            frame = engine._get_next_frame()
+            # Should be able to consume frames
+            frame = engine._consume_next_frame()
             assert frame is not None
             assert frame.data == "test"
