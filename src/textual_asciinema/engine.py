@@ -5,15 +5,16 @@ import time
 from typing import Callable, Optional, Dict, Any
 from textual_tty import TextualTerminal
 
-from .parser import CastParser
+from .parser import CastParser, CastFrame
 
 
 class Keyframe:
     """Represents a cached terminal state at a specific timestamp."""
 
-    def __init__(self, timestamp: float, frame_index: int, cost: int, creation_time: float):
+    def __init__(self, timestamp: float, frame_index: int, file_offset: int, cost: int, creation_time: float):
         self.timestamp = timestamp
-        self.frame_index = frame_index  # Index in frames list to replay from
+        self.frame_index = frame_index  # Index in frames list (for compatibility)
+        self.file_offset = file_offset  # Byte offset in cast file for streaming
         self.cost = cost  # Number of characters processed to create this keyframe
         self.creation_time = creation_time  # When this keyframe was created
         # Future: terminal_state for dump()/reset() when available
@@ -44,9 +45,13 @@ class PlaybackEngine:
         # Playback task
         self._playback_task: Optional[asyncio.Task] = None
 
-        # Frame cache for current playback
-        self._frames = list(self.parser.frames())
-        self._current_frame_index = 0
+        # Streaming playback state
+        self._frame_buffer = []  # Small buffer of upcoming frames
+        self._buffer_size = 100  # Keep 100 frames buffered
+        self._current_file_offset = 0  # Will be set after method definition
+
+        # Initialize file offset after methods are defined
+        self._initialize_offset()
 
     async def play(self) -> None:
         """Start or resume playback."""
@@ -80,6 +85,16 @@ class PlaybackEngine:
         """Set playback speed multiplier."""
         self.speed = speed
 
+    def _initialize_offset(self) -> None:
+        """Initialize the current file offset to the first frame."""
+        try:
+            for offset, frame in self.parser.frames_with_offsets():
+                self._current_file_offset = offset
+                return
+        except Exception:
+            pass
+        self._current_file_offset = 0  # Fallback to start of file
+
     def _should_create_keyframe(self) -> bool:
         """Check if we should create a keyframe at current time."""
         return self.current_time - self.last_keyframe_time >= self.keyframe_interval
@@ -89,7 +104,8 @@ class PlaybackEngine:
         keyframe_time = self.current_time
         keyframe = Keyframe(
             timestamp=keyframe_time,
-            frame_index=self._current_frame_index,
+            frame_index=0,  # Not used in streaming mode
+            file_offset=self._current_file_offset,
             cost=self.current_cost,
             creation_time=time.time(),
         )
@@ -109,6 +125,33 @@ class PlaybackEngine:
         # Check if we should create a keyframe
         if self._should_create_keyframe():
             self._create_keyframe()
+
+    def _fill_frame_buffer(self) -> None:
+        """Fill the frame buffer with upcoming frames."""
+        if len(self._frame_buffer) >= self._buffer_size:
+            return  # Buffer is full
+
+        # Get frames starting from current offset
+        try:
+            frame_iter = self.parser.parse_from_offset(self._current_file_offset)
+            frames_to_add = self._buffer_size - len(self._frame_buffer)
+
+            for i, frame in enumerate(frame_iter):
+                if i >= frames_to_add:
+                    break
+                self._frame_buffer.append(frame)
+        except Exception:
+            # End of file or parsing error
+            pass
+
+    def _get_next_frame(self) -> Optional[CastFrame]:
+        """Get the next frame, managing the buffer."""
+        if not self._frame_buffer:
+            self._fill_frame_buffer()
+
+        if self._frame_buffer:
+            return self._frame_buffer.pop(0)
+        return None
 
     def _find_nearest_keyframe(self, target_time: float) -> Optional[Keyframe]:
         """Find the keyframe closest to but before target_time."""
@@ -157,29 +200,31 @@ class PlaybackEngine:
         keyframe = self._find_nearest_keyframe(timestamp)
 
         if keyframe:
-            # Start from keyframe
-            start_frame_index = keyframe.frame_index
+            # Start from keyframe file offset
+            start_offset = keyframe.file_offset
         else:
-            # No keyframe found, start from beginning
-            start_frame_index = 0
-
-        # Find the target frame index
-        target_frame_index = start_frame_index
-        for i in range(start_frame_index, len(self._frames)):
-            if self._frames[i].timestamp > timestamp:
+            # No keyframe found, start from beginning of file (after header)
+            # We need to find the first frame offset
+            start_offset = None
+            for offset, frame in self.parser.frames_with_offsets():
+                start_offset = offset
                 break
-            target_frame_index = i
+            if start_offset is None:
+                start_offset = 0
 
-        # Replay frames from start point to target
-        for i in range(start_frame_index, target_frame_index + 1):
-            frame = self._frames[i]
+        # Replay frames from start offset to target timestamp
+        self._current_file_offset = start_offset
+        for frame in self.parser.parse_from_offset(start_offset):
+            if frame.timestamp > timestamp:
+                break
             if frame.stream_type == "o":
                 # Use _feed_terminal_data to track cost and create keyframes
                 self._feed_terminal_data(frame.data)
 
         # Update state
-        self._current_frame_index = target_frame_index
         self.current_time = timestamp
+        self._frame_buffer.clear()  # Clear buffer after seek
+        self._fill_frame_buffer()  # Refill for playback
 
         if self.on_time_update:
             self.on_time_update(self.current_time)
@@ -188,9 +233,13 @@ class PlaybackEngine:
             await self.play()
 
     async def _playback_loop(self) -> None:
-        """Main playback loop."""
+        """Main playback loop with streaming."""
         try:
-            while self.is_playing and self._current_frame_index < len(self._frames):
+            # Initialize buffer if empty
+            if not self._frame_buffer:
+                self._fill_frame_buffer()
+
+            while self.is_playing:
                 current_real_time = time.time()
 
                 # Calculate how much cast time has passed
@@ -202,16 +251,25 @@ class PlaybackEngine:
                 self.last_update_time = current_real_time
 
                 # Process frames that should have played by now
-                while (
-                    self._current_frame_index < len(self._frames)
-                    and self._frames[self._current_frame_index].timestamp <= self.current_time
-                ):
-                    frame = self._frames[self._current_frame_index]
-                    if frame.stream_type == "o":
+                while True:
+                    # Peek at next frame
+                    if not self._frame_buffer:
+                        self._fill_frame_buffer()
+
+                    if not self._frame_buffer:
+                        # No more frames, end of file
+                        self.is_playing = False
+                        break
+
+                    next_frame = self._frame_buffer[0]
+                    if next_frame.timestamp > self.current_time:
+                        break  # This frame is in the future
+
+                    # Process this frame
+                    frame = self._get_next_frame()
+                    if frame and frame.stream_type == "o":
                         # Feed ANSI data to the terminal parser with cost tracking
                         self._feed_terminal_data(frame.data)
-
-                    self._current_frame_index += 1
 
                 # Update time display
                 if self.on_time_update:
@@ -235,7 +293,8 @@ class PlaybackEngine:
     def reset(self) -> None:
         """Reset playback to the beginning."""
         self.current_time = 0.0
-        self._current_frame_index = 0
+        self._current_file_offset = 0
+        self._frame_buffer.clear()
         self.last_keyframe_time = 0.0
         self.current_cost = 0
         # Keep existing keyframes - they're still valid for future seeks

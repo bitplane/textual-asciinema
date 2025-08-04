@@ -1,7 +1,7 @@
 [project]
 name = "textual-asciinema"
 description = "asciinema widget for textual"
-version = "0.0.2"
+version = "0.0.3"
 authors = [
     { name = "Gareth Davidson", email = "gaz@bitplane.net" }
 ]
@@ -10,7 +10,8 @@ requires-python = ">=3.10"
 
 dependencies = [
     "textual",
-    "textual-tty"
+    "textual-tty",
+    "platformdirs"
 ]
 
 [project.scripts]
@@ -20,13 +21,15 @@ textual-asciinema = "textual_asciinema.__main__:main"
 dev = [
     "pre-commit",
     "pytest",
+    "pytest-asyncio",
     "coverage",
     "pytest-cov",
     "build",
     "twine",
     "ruff",
     "pydoc-markdown",
-    "mkdocs"
+    "mkdocs",
+    "mkdocs-material"
 ]
 
 [build-system]

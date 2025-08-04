@@ -5,3 +5,5 @@ htmlcov
 dist
 coverage.json
 *.mp4
+docs/pydoc.md
+site
