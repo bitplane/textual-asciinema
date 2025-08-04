@@ -43,10 +43,19 @@
 
 #timeline-scrubber {
     width: 1fr;
+    height: 1;
+    background: $surface;
+    color: $primary;
+    text-style: none;
+}
+
+#timeline-scrubber:hover {
+    background: $surface-lighten-1;
 }
 
 #speed-display {
-    width: 4;
+    width: auto;
     text-align: center;
-    margin: 0 1 0 0;
+    padding: 0 0 0 1;
+    overflow: hidden;
 }
