@@ -75,7 +75,7 @@ class PlayerControls(Widget):
     def compose(self) -> ComposeResult:
         """Compose the control bar."""
         with Horizontal(id="controls-container"):
-            yield Button("▶️", id="play-pause-btn", variant="primary")
+            yield Button("▶", id="play-pause-btn", variant="primary")
             yield Label(self._format_time_display(), id="time-display")
             yield TimeBar(max_time=self.duration, step=1.0, id="timeline-scrubber")
             yield Label(f"{self.speed:.1f}x", id="speed-display")
@@ -112,7 +112,7 @@ class PlayerControls(Widget):
         if self.is_mounted:
             try:
                 button = self.query_one("#play-pause-btn", Button)
-                button.label = "⏸️" if playing else "▶️"
+                button.label = "⏸" if playing else "▶"
             except Exception:
                 # Widget not ready yet
                 pass

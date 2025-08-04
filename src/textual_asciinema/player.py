@@ -2,7 +2,7 @@
 
 from pathlib import Path
 from textual.app import ComposeResult
-from textual.containers import Vertical
+from textual.containers import Vertical, VerticalScroll
 from textual.widget import Widget
 from textual_tty import TextualTerminal
 
@@ -14,46 +14,35 @@ from .controls import PlayerControls
 class PlaybackTerminal(TextualTerminal):
     """TextualTerminal configured for playback-only mode."""
 
+    def __init__(self, width: int, height: int, **kwargs):
+        super().__init__(**kwargs)
+        # Initialize with proper dimensions
+        self.resize(width, height)
+
     async def start_process(self) -> None:
         """Override to prevent starting a shell process."""
         # Don't start any process - we'll feed data manually for playback
         pass
-
-    async def on_mount(self) -> None:
-        """Initialize terminal without starting a process."""
-        # Initialize the underlying terminal for display without spawning a process
-        if hasattr(self, "terminal") and self.terminal:
-            # Terminal is already initialized
-            pass
-        else:
-            # Try to initialize the terminal display manually
-            try:
-                # The terminal widget should initialize its display components
-                await super().on_mount()
-            except Exception:
-                # If super().on_mount() tries to start a process, we skip it
-                pass
 
 
 class AsciinemaPlayer(Widget):
     """Main asciinema player widget with terminal display and controls."""
 
     DEFAULT_CSS = """
-    #asciinema-terminal {
+    #terminal-scroll {
         border: solid white;
         overflow: hidden;
         width: auto;
         height: auto;
-    }
-
-    #asciinema-terminal TerminalScrollView {
-        overflow: hidden;
+        text-wrap: nowrap;
         scrollbar-size: 0 0;
     }
 
-    #asciinema-terminal Terminal {
+    #asciinema-terminal {
         overflow: hidden;
         scrollbar-size: 0 0;
+        width: auto;
+        height: auto;
     }
 
     #asciinema-controls {
@@ -121,10 +110,10 @@ class AsciinemaPlayer(Widget):
         """Compose the player with terminal and controls."""
         header = self.parser.header
 
-        # Create terminal with cast dimensions (no process for playback)
+        # Create TextualTerminal for proper ANSI rendering
         self.terminal = PlaybackTerminal(width=header.width, height=header.height, id="asciinema-terminal")
 
-        # Create playback engine
+        # Create playback engine with terminal for direct manipulation
         self.engine = PlaybackEngine(self.parser, self.terminal)
 
         # Create controls
@@ -136,16 +125,24 @@ class AsciinemaPlayer(Widget):
         self.controls.on_speed_change = self.engine.set_speed
 
         # Wire up engine to controls for time updates
-        self.engine.on_time_update = self.controls.update_time
+        self.engine.on_time_update = self._update_display_and_time
 
         with Vertical():
-            yield self.terminal
+            with VerticalScroll(id="terminal-scroll"):
+                yield self.terminal
             yield self.controls
 
     def on_mount(self) -> None:
         """Initialize the player when mounted."""
         # Don't start the terminal process - we're in playback mode
         pass
+
+    def _update_display_and_time(self, current_time: float) -> None:
+        """Update display terminal from video file and notify controls."""
+        # Engine has already triggered the terminal display update
+
+        # Update time controls
+        self.controls.update_time(current_time)
 
     def _handle_play_pause(self) -> None:
         """Handle play/pause button clicks (sync wrapper for async method)."""
