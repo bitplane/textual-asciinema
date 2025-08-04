@@ -307,48 +307,6 @@
   
 </li>
       
-        <li class="md-nav__item">
-  <a href="#development-status" class="md-nav__link">
-    <span class="md-ellipsis">
-      Development Status
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#next-steps" class="md-nav__link">
-    <span class="md-ellipsis">
-      Next Steps
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Next Steps">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#implementation-plan" class="md-nav__link">
-    <span class="md-ellipsis">
-      Implementation Plan:
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#benefits" class="md-nav__link">
-    <span class="md-ellipsis">
-      Benefits:
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
     </ul>
   
 </nav>
@@ -441,48 +399,6 @@
   
 </li>
       
-        <li class="md-nav__item">
-  <a href="#development-status" class="md-nav__link">
-    <span class="md-ellipsis">
-      Development Status
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#next-steps" class="md-nav__link">
-    <span class="md-ellipsis">
-      Next Steps
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Next Steps">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#implementation-plan" class="md-nav__link">
-    <span class="md-ellipsis">
-      Implementation Plan:
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#benefits" class="md-nav__link">
-    <span class="md-ellipsis">
-      Benefits:
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
     </ul>
   
 </nav>
@@ -522,32 +438,6 @@
 <li><a href="https://bitplan.net/dev/python/tvmux">🎬 asciinema</a> - terminal recorder</li>
 <li><a href="https://bitplane.net/dev/python/bittty">🗔 </a> - a pure python tty</li>
 <li><a href="https://bitplane.net/dev/python/tvmux">🎥 tvmux</a> - record your tmux projects</li>
-</ul>
-<h2 id="development-status">Development Status</h2>
-<p>✅ <strong>COMPLETED</strong> - Keyframe Caching System (2025-08-04)
-- Keyframes created every 1 second during playback
-- Seek optimization using nearest keyframe as starting point<br />
-- Cost tracking for future cache eviction algorithms
-- Terminal state reset for clean scrubbing experience
-- Performance: O(target_time) → O(keyframe_interval) for seeks</p>
-<h2 id="next-steps">Next Steps</h2>
-<p>🔄 <strong>IN PROGRESS</strong> - File Offset Based Keyframes
-- Store byte offsets in .cast files instead of just frame indices
-- Enable streaming playback of massive cast files without loading everything into memory
-- Lazy frame parsing from file positions<br />
-- True streaming for multi-GB recordings</p>
-<h3 id="implementation-plan">Implementation Plan:</h3>
-<ol>
-<li><strong>Enhance Keyframe class</strong>: Add <code>file_offset</code> field to store byte position in .cast file</li>
-<li><strong>Update CastParser</strong>: Track file position during parsing, provide seek capability  </li>
-<li><strong>Streaming seek</strong>: Jump to file offset, parse from there instead of replaying from memory</li>
-<li><strong>Memory efficiency</strong>: Only keep frames in memory around current playback position</li>
-</ol>
-<h3 id="benefits">Benefits:</h3>
-<ul>
-<li>Handle multi-GB cast files without memory exhaustion</li>
-<li>Instant seeking regardless of file size</li>
-<li>Constant memory usage independent of recording length</li>
 </ul>
 
 
